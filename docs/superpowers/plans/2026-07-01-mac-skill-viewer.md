@@ -12,7 +12,7 @@
 
 - **平台**：macOS 13.0+（`platforms: [.macOS(.v13)]`）。
 - **构建系统**：Swift Package Manager（非 Xcode 工程）。命令统一为 `swift build`、`swift test`、`swift run`。
-- **测试框架**：XCTest（`swift test`）。不使用 Swift Testing（需 macOS 14 SDK，本计划锁 macOS 13）。
+- **测试框架**：**Swift Testing**（`import Testing` / `@Suite` / `@Test` / `#expect`），运行命令统一为 `./scripts/run-tests.sh --filter <Suite名>`（该脚本为 SwiftPM 补上 CLT 环境下 `Testing.framework` 框架搜索路径、`libTestingMacros.dylib` 插件路径与两条 `-rpath`）。**不使用 XCTest**——本机仅装 Apple Command Line Tools、无 Xcode，`XCTest.framework` 不可用。计划正文里出现的 `XCTest`/`XCTestCase`/`XCTAssert*` 代码块需在实现时翻译为等价的 Swift Testing 写法（`final class FooTests: XCTestCase` → `@Suite struct FooTests`；`func testBar()` → `@Test func bar()`；`XCTAssertEqual(a, b)` → `#expect(a == b)`；`XCTAssertTrue(p)` → `#expect(p)`；`XCTAssertFalse(p)` → `#expect(!p)`；`XCTAssertNotNil(x)` → `#expect(x != nil)`；`XCTAssertGreaterThan(a, b)` → `#expect(a > b)`；`XCTAssertLessThanOrEqual(a, b)` → `#expect(a <= b)`；`XCTAssertNotNil` + 解构用 `try #require`）。`throw` 的测试直接 `@Test func foo() throws`。
 - **Markdown 渲染**：用 Foundation 内置 `AttributedString(markdown:options:)`（macOS 13+ 原生支持 CommonMark 子集），替代 spec 中提到的 `Down` 库。理由：零外部依赖、零构建风险、同为「Markdown → AttributedString」目标。渲染失败回退纯文本 `.monospaced`。
 - **并发**：扫描用 `TaskGroup` 并发；`@Observable AppModel` 驱动 UI。
 - **命名**：类型用 PascalCase，方法/属性用 camelCase。`SkillSource` 的 `displayName`/`icon` 用中文标签 + SF Symbols。
@@ -175,30 +175,27 @@ git commit -m "chore: init SwiftPM skeleton"
 - [ ] **Step 1: 写失败测试 `Tests/SkillHubTests/SkillSourceTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class SkillSourceTests: XCTestCase {
-    func testAllCasesOrder() {
-        XCTAssertEqual(
-            SkillSource.allCases.map(\.rawValue),
-            ["personal", "superpowers", "frontend_design", "ponytail", "glm_plan_usage", "other"]
-        )
+@Suite("SkillSourceTests") struct SkillSourceTests {
+    @Test func testAllCasesOrder() {
+        #expect(SkillSource.allCases.map(\.rawValue) == ["personal", "superpowers", "frontend_design", "ponytail", "glm_plan_usage", "other"])
     }
 
-    func testIdIsRawValue() {
-        XCTAssertEqual(SkillSource.personal.id, "personal")
+    @Test func testIdIsRawValue() {
+        #expect(SkillSource.personal.id == "personal")
     }
 
-    func testDisplayNameNonEmpty() {
+    @Test func testDisplayNameNonEmpty() {
         for s in SkillSource.allCases {
-            XCTAssertFalse(s.displayName.isEmpty, "\(s) has empty displayName")
+            #expect(!(s.displayName.isEmpty))
         }
     }
 
-    func testIconIsSFSymbolName() {
+    @Test func testIconIsSFSymbolName() {
         for s in SkillSource.allCases {
-            XCTAssertFalse(s.icon.isEmpty, "\(s) has empty icon")
+            #expect(!(s.icon.isEmpty))
         }
     }
 }
@@ -206,7 +203,7 @@ final class SkillSourceTests: XCTestCase {
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `swift test --filter SkillSourceTests`
+Run: `./scripts/run-tests.sh --filter SkillSourceTests`
 Expected: FAIL（`SkillSource` 未定义）
 
 - [ ] **Step 3: 写实现 `Sources/SkillHub/Models/SkillSource.swift`**
@@ -250,7 +247,7 @@ enum SkillSource: String, CaseIterable, Identifiable, Hashable {
 
 - [ ] **Step 4: 运行测试，确认通过**
 
-Run: `swift test --filter SkillSourceTests`
+Run: `./scripts/run-tests.sh --filter SkillSourceTests`
 Expected: PASS（4 个测试）
 
 - [ ] **Step 5: Commit**
@@ -316,19 +313,19 @@ git commit -m "feat: add SkillEntry model"
 - [ ] **Step 1: 写失败测试 `Tests/SkillHubTests/ScriptFileTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class ScriptFileTests: XCTestCase {
-    func testLanguageFromExtension() {
-        XCTAssertEqual(ScriptLanguage.from(pathExtension: "sh"), .shell)
-        XCTAssertEqual(ScriptLanguage.from(pathExtension: "py"), .python)
-        XCTAssertEqual(ScriptLanguage.from(pathExtension: "js"), .node)
-        XCTAssertEqual(ScriptLanguage.from(pathExtension: "txt"), .other)
-        XCTAssertEqual(ScriptLanguage.from(pathExtension: ""), .other)
+@Suite("ScriptFileTests") struct ScriptFileTests {
+    @Test func testLanguageFromExtension() {
+        #expect(ScriptLanguage.from(pathExtension: "sh") == .shell)
+        #expect(ScriptLanguage.from(pathExtension: "py") == .python)
+        #expect(ScriptLanguage.from(pathExtension: "js") == .node)
+        #expect(ScriptLanguage.from(pathExtension: "txt") == .other)
+        #expect(ScriptLanguage.from(pathExtension: "") == .other)
     }
 
-    func testMakeBuildsFields() throws {
+    @Test func testMakeBuildsFields() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("skill-\(UUID().uuidString)/scripts/hello.sh")
         try FileManager.default.createDirectory(at: temp.deletingLastPathComponent(),
@@ -339,17 +336,17 @@ final class ScriptFileTests: XCTestCase {
 
         let skillDir = temp.deletingLastPathComponent().deletingLastPathComponent().path
         let f = try ScriptFile.make(at: temp.path, skillDirPath: skillDir)
-        XCTAssertEqual(f.name, "hello.sh")
-        XCTAssertEqual(f.language, .shell)
-        XCTAssertEqual(f.relativePath, "scripts/hello.sh")
-        XCTAssertEqual(f.contentPreview.split(separator: "\n").count, 50)
+        #expect(f.name == "hello.sh")
+        #expect(f.language == .shell)
+        #expect(f.relativePath == "scripts/hello.sh")
+        #expect(f.contentPreview.split(separator: "\n").count == 50)
     }
 }
 ```
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `swift test --filter ScriptFileTests`
+Run: `./scripts/run-tests.sh --filter ScriptFileTests`
 Expected: FAIL（`ScriptLanguage`/`ScriptFile` 未定义）
 
 - [ ] **Step 3: 写实现 `Sources/SkillHub/Models/ScriptFile.swift`**
@@ -414,7 +411,7 @@ struct ScriptFile: Identifiable, Hashable {
 
 - [ ] **Step 4: 运行测试，确认通过**
 
-Run: `swift test --filter ScriptFileTests`
+Run: `./scripts/run-tests.sh --filter ScriptFileTests`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -473,11 +470,11 @@ git commit -m "feat: add SkillGroup model"
 - [ ] **Step 1: 写失败测试 `Tests/SkillHubTests/SkillMarkdownParserTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class SkillMarkdownParserTests: XCTestCase {
-    func testStandardFrontMatter() {
+@Suite("SkillMarkdownParserTests") struct SkillMarkdownParserTests {
+    @Test func testStandardFrontMatter() {
         let md = """
         ---
         name: brainstorming
@@ -487,11 +484,11 @@ final class SkillMarkdownParserTests: XCTestCase {
         # Body
         """
         let fm = SkillMarkdownParser.parse(md)
-        XCTAssertEqual(fm.name, "brainstorming")
-        XCTAssertEqual(fm.description, "Use this before creative work.")
+        #expect(fm.name == "brainstorming")
+        #expect(fm.description == "Use this before creative work.")
     }
 
-    func testMultiLineDescriptionBlock() {
+    @Test func testMultiLineDescriptionBlock() {
         let md = """
         ---
         name: wewrite
@@ -502,18 +499,18 @@ final class SkillMarkdownParserTests: XCTestCase {
         # Body
         """
         let fm = SkillMarkdownParser.parse(md)
-        XCTAssertEqual(fm.name, "wewrite")
-        XCTAssertEqual(fm.description, "第一行\n第二行")
+        #expect(fm.name == "wewrite")
+        #expect(fm.description == "第一行\n第二行")
     }
 
-    func testNoFrontMatter() {
+    @Test func testNoFrontMatter() {
         let md = "# Just a title\nbody"
         let fm = SkillMarkdownParser.parse(md)
-        XCTAssertEqual(fm.name, "")
-        XCTAssertEqual(fm.description, "")
+        #expect(fm.name == "")
+        #expect(fm.description == "")
     }
 
-    func testBrokenYamlDoesNotThrow() {
+    @Test func testBrokenYamlDoesNotThrow() {
         let md = """
         ---
         name: broken
@@ -521,26 +518,26 @@ final class SkillMarkdownParserTests: XCTestCase {
         ---
         """
         let fm = SkillMarkdownParser.parse(md)
-        XCTAssertEqual(fm.name, "broken")
-        XCTAssertFalse(fm.description.isEmpty == false) // 只要不崩溃即可
+        #expect(fm.name == "broken")
+        #expect(!(fm.description.isEmpty == false)) // 只要不崩溃即可
     }
 
-    func testNameMissing() {
+    @Test func testNameMissing() {
         let md = """
         ---
         description: "no name"
         ---
         """
         let fm = SkillMarkdownParser.parse(md)
-        XCTAssertEqual(fm.name, "")
-        XCTAssertEqual(fm.description, "no name")
+        #expect(fm.name == "")
+        #expect(fm.description == "no name")
     }
 }
 ```
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `swift test --filter SkillMarkdownParserTests`
+Run: `./scripts/run-tests.sh --filter SkillMarkdownParserTests`
 Expected: FAIL（`SkillMarkdownParser` 未定义）
 
 - [ ] **Step 3: 写实现 `Sources/SkillHub/Services/SkillMarkdownParser.swift`**
@@ -609,7 +606,7 @@ enum SkillMarkdownParser {
 
 - [ ] **Step 4: 运行测试，确认通过**
 
-Run: `swift test --filter SkillMarkdownParserTests`
+Run: `./scripts/run-tests.sh --filter SkillMarkdownParserTests`
 Expected: PASS（5 个测试）
 
 - [ ] **Step 5: Commit**
@@ -637,48 +634,48 @@ git commit -m "feat: add SkillMarkdownParser for YAML front matter"
 - [ ] **Step 1: 写失败测试 `Tests/SkillHubTests/PathProviderTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class PathProviderTests: XCTestCase {
-    func testHomeExpandIsAbsolute() {
+@Suite("PathProviderTests") struct PathProviderTests {
+    @Test func testHomeExpandIsAbsolute() {
         let roots = PathProvider.rootDirectories()
         for r in roots {
-            XCTAssertTrue(r.path.hasPrefix("/"), "\(r.path) not absolute")
-            XCTAssertFalse(r.path.contains("~"), "\(r.path) contains ~")
+            #expect(r.path.hasPrefix("/"))
+            #expect(!(r.path.contains("~")))
         }
     }
 
-    func testPersonalRootPresent() {
+    @Test func testPersonalRootPresent() {
         let roots = PathProvider.rootDirectories()
-        XCTAssertTrue(roots.contains { $0.source == .personal && $0.path.hasSuffix(".claude/skills") })
+        #expect(roots.contains { $0.source == .personal && $0.path.hasSuffix(".claude/skills") })
     }
 
-    func testNoOtherSourcesWhenCacheMissing() {
+    @Test func testNoOtherSourcesWhenCacheMissing() {
         // 仅断言不崩溃且 personal 一定在；cache 目录可能不存在
         _ = PathProvider.rootDirectories()
     }
 
-    func testClassifySource() {
-        XCTAssertEqual(PathProvider.classify(marketplace: "superpowers-marketplace",
-                                             plugin: "superpowers"), .superpowers)
-        XCTAssertEqual(PathProvider.classify(marketplace: "claude-plugins-official",
-                                             plugin: "superpowers"), .superpowers)
-        XCTAssertEqual(PathProvider.classify(marketplace: "claude-plugins-official",
-                                             plugin: "frontend-design"), .frontendDesign)
-        XCTAssertEqual(PathProvider.classify(marketplace: "ponytail",
-                                             plugin: "ponytail"), .ponytail)
-        XCTAssertEqual(PathProvider.classify(marketplace: "zai-coding-plugins",
-                                             plugin: "glm-plan-usage"), .glmPlanUsage)
-        XCTAssertEqual(PathProvider.classify(marketplace: "unknown",
-                                             plugin: "x"), .other)
+    @Test func testClassifySource() {
+        #expect(PathProvider.classify(marketplace: "superpowers-marketplace",
+                                             plugin: "superpowers") == .superpowers)
+        #expect(PathProvider.classify(marketplace: "claude-plugins-official",
+                                             plugin: "superpowers") == .superpowers)
+        #expect(PathProvider.classify(marketplace: "claude-plugins-official",
+                                             plugin: "frontend-design") == .frontendDesign)
+        #expect(PathProvider.classify(marketplace: "ponytail",
+                                             plugin: "ponytail") == .ponytail)
+        #expect(PathProvider.classify(marketplace: "zai-coding-plugins",
+                                             plugin: "glm-plan-usage") == .glmPlanUsage)
+        #expect(PathProvider.classify(marketplace: "unknown",
+                                             plugin: "x") == .other)
     }
 }
 ```
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `swift test --filter PathProviderTests`
+Run: `./scripts/run-tests.sh --filter PathProviderTests`
 Expected: FAIL（`PathProvider` 未定义）
 
 - [ ] **Step 3: 写实现 `Sources/SkillHub/Services/PathProvider.swift`**
@@ -751,7 +748,7 @@ enum PathProvider {
 
 - [ ] **Step 4: 运行测试，确认通过**
 
-Run: `swift test --filter PathProviderTests`
+Run: `./scripts/run-tests.sh --filter PathProviderTests`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -834,42 +831,42 @@ console.log("y")
 - [ ] **Step 2: 写失败测试 `Tests/SkillHubTests/SkillScannerTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class SkillScannerTests: XCTestCase {
-    func testScanStandardRoot() throws {
+@Suite("SkillScannerTests") struct SkillScannerTests {
+    @Test func testScanStandardRoot() throws {
         let fixtures = fixturesRoot()
         let root = SkillRoot(path: fixtures, source: .personal)
         let entries = SkillScanner.scanRoot(root)
-        XCTAssertTrue(entries.contains { $0.name == "standard-skill" })
-        XCTAssertTrue(entries.contains { $0.name == "multi" })
-        XCTAssertTrue(entries.contains { $0.name == "scripted" })
+        #expect(entries.contains { $0.name == "standard-skill" })
+        #expect(entries.contains { $0.name == "multi" })
+        #expect(entries.contains { $0.name == "scripted" })
     }
 
-    func testNoFrontMatterUsesDirName() throws {
+    @Test func testNoFrontMatterUsesDirName() throws {
         let fixtures = fixturesRoot()
         let root = SkillRoot(path: fixtures, source: .personal)
         let entries = SkillScanner.scanRoot(root)
         let noFm = entries.first { $0.skillDirPath.contains("no-frontmatter") }
-        XCTAssertNotNil(noFm)
-        XCTAssertEqual(noFm?.name, "no-frontmatter")
+        #expect(noFm != nil)
+        #expect(noFm?.name == "no-frontmatter")
     }
 
-    func testBrokenYamlDoesNotCrash() throws {
+    @Test func testBrokenYamlDoesNotCrash() throws {
         let fixtures = fixturesRoot()
         let root = SkillRoot(path: fixtures, source: .personal)
         _ = SkillScanner.scanRoot(root) // 不崩溃即通过
     }
 
-    func testSizeAndFileCount() throws {
+    @Test func testSizeAndFileCount() throws {
         let fixtures = fixturesRoot()
         let root = SkillRoot(path: fixtures, source: .personal)
         let entries = SkillScanner.scanRoot(root)
         let scripted = entries.first { $0.name == "scripted" }
-        XCTAssertNotNil(scripted)
-        XCTAssertGreaterThan(scripted?.fileCount ?? 0, 1) // SKILL.md + 3 scripts
-        XCTAssertGreaterThan(scripted?.sizeBytes ?? 0, 0)
+        #expect(scripted != nil)
+        #expect(scripted?.fileCount ?? 0 > 1) // SKILL.md + 3 scripts
+        #expect(scripted?.sizeBytes ?? 0 > 0)
     }
 
     private func fixturesRoot() -> String {
@@ -883,7 +880,7 @@ final class SkillScannerTests: XCTestCase {
 
 - [ ] **Step 3: 运行测试，确认失败**
 
-Run: `swift test --filter SkillScannerTests`
+Run: `./scripts/run-tests.sh --filter SkillScannerTests`
 Expected: FAIL（`SkillScanner` 未定义）
 
 - [ ] **Step 4: 写实现 `Sources/SkillHub/Services/SkillScanner.swift`**
@@ -967,7 +964,7 @@ final class SkillScanner {
 
 - [ ] **Step 5: 运行测试，确认通过**
 
-Run: `swift test --filter SkillScannerTests`
+Run: `./scripts/run-tests.sh --filter SkillScannerTests`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -993,11 +990,11 @@ git commit -m "feat: add SkillScanner"
 - [ ] **Step 1: 写失败测试 `Tests/SkillHubTests/ScriptRunnerTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class ScriptRunnerTests: XCTestCase {
-    func testEchoSuccess() throws {
+@Suite("ScriptRunnerTests") struct ScriptRunnerTests {
+    @Test func testEchoSuccess() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("echo-\(UUID().uuidString).sh")
         try "#!/bin/bash\necho hello".write(to: temp, atomically: true, encoding: .utf8)
@@ -1006,12 +1003,12 @@ final class ScriptRunnerTests: XCTestCase {
                             relativePath: temp.lastPathComponent, sizeBytes: 0,
                             language: .shell, contentPreview: "")
         let r = ScriptRunner.run(script: sf)
-        XCTAssertEqual(r.exitCode, 0)
-        XCTAssertTrue(r.stdout.contains("hello"))
-        XCTAssertFalse(r.timedOut)
+        #expect(r.exitCode == 0)
+        #expect(r.stdout.contains("hello"))
+        #expect(!(r.timedOut))
     }
 
-    func testNonZeroExit() throws {
+    @Test func testNonZeroExit() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("exit-\(UUID().uuidString).sh")
         try "#!/bin/bash\nexit 3".write(to: temp, atomically: true, encoding: .utf8)
@@ -1020,11 +1017,11 @@ final class ScriptRunnerTests: XCTestCase {
                             relativePath: temp.lastPathComponent, sizeBytes: 0,
                             language: .shell, contentPreview: "")
         let r = ScriptRunner.run(script: sf)
-        XCTAssertEqual(r.exitCode, 3)
-        XCTAssertFalse(r.timedOut)
+        #expect(r.exitCode == 3)
+        #expect(!(r.timedOut))
     }
 
-    func testNoPermissionUsesInterpreter() throws {
+    @Test func testNoPermissionUsesInterpreter() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("noperm-\(UUID().uuidString).sh")
         try "#!/bin/bash\necho works".write(to: temp, atomically: true, encoding: .utf8)
@@ -1034,11 +1031,11 @@ final class ScriptRunnerTests: XCTestCase {
                             relativePath: temp.lastPathComponent, sizeBytes: 0,
                             language: .shell, contentPreview: "")
         let r = ScriptRunner.run(script: sf)
-        XCTAssertEqual(r.exitCode, 0)
-        XCTAssertTrue(r.stdout.contains("works"))
+        #expect(r.exitCode == 0)
+        #expect(r.stdout.contains("works"))
     }
 
-    func testLargeOutputTruncated() throws {
+    @Test func testLargeOutputTruncated() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("big-\(UUID().uuidString).sh")
         let body = "#!/bin/bash\n" + (0..<20000).map { "echo line \($0)" }.joined(separator: "\n")
@@ -1048,15 +1045,15 @@ final class ScriptRunnerTests: XCTestCase {
                             relativePath: temp.lastPathComponent, sizeBytes: 0,
                             language: .shell, contentPreview: "")
         let r = ScriptRunner.run(script: sf)
-        XCTAssertTrue(r.truncated)
-        XCTAssertLessThanOrEqual(r.stdout.count, 10000 + 200) // 截断后可能略多于 10000（行尾），留余量
+        #expect(r.truncated)
+        #expect(r.stdout.count <= 10000 + 200) // 截断后可能略多于 10000（行尾），留余量
     }
 }
 ```
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `swift test --filter ScriptRunnerTests`
+Run: `./scripts/run-tests.sh --filter ScriptRunnerTests`
 Expected: FAIL（`ScriptRunner`/`ScriptResult` 未定义）
 
 - [ ] **Step 3: 写 `Sources/SkillHub/Services/ScriptResult.swift`**
@@ -1139,7 +1136,7 @@ final class ScriptRunner {
 
 - [ ] **Step 5: 运行测试，确认通过**
 
-Run: `swift test --filter ScriptRunnerTests`
+Run: `./scripts/run-tests.sh --filter ScriptRunnerTests`
 Expected: PASS（注意 `testLargeOutputTruncated` 可能较慢，~1-2s）
 
 - [ ] **Step 6: Commit**
@@ -1176,10 +1173,10 @@ git commit -m "feat: add ScriptRunner with timeout and truncation"
 - [ ] **Step 1: 写失败测试 `Tests/SkillHubTests/AppModelTests.swift`**
 
 ```swift
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class AppModelTests: XCTestCase {
+@Suite("AppModelTests") struct AppModelTests {
     private func entry(_ name: String, _ version: String?, _ source: SkillSource = .personal) -> SkillEntry {
         SkillEntry(id: "/x/\(name)/\(version ?? "0")", name: name, description: "d",
                    source: source, skillDirPath: "/x/\(name)",
@@ -1187,53 +1184,53 @@ final class AppModelTests: XCTestCase {
                    sizeBytes: 0, fileCount: 0)
     }
 
-    func testSearchByName() {
+    @Test func testSearchByName() {
         let m = AppModel()
         m.entries = [entry("alpha", nil), entry("beta", nil)]
         m.query = "alp"
-        XCTAssertEqual(m.filteredAndGrouped.flatMap(\.entries).map(\.name), ["alpha"])
+        #expect(m.filteredAndGrouped.flatMap(\.entries).map(\.name) == ["alpha"])
     }
 
-    func testSourceFilter() {
+    @Test func testSourceFilter() {
         let m = AppModel()
         m.entries = [entry("a", nil, .personal), entry("b", nil, .superpowers)]
         m.selectedSources = [.superpowers]
-        XCTAssertEqual(m.filteredAndGrouped.flatMap(\.entries).map(\.name), ["b"])
+        #expect(m.filteredAndGrouped.flatMap(\.entries).map(\.name) == ["b"])
     }
 
-    func testEmptySourcesMeansAll() {
+    @Test func testEmptySourcesMeansAll() {
         let m = AppModel()
         m.entries = [entry("a", nil, .personal), entry("b", nil, .superpowers)]
-        XCTAssertEqual(m.filteredAndGrouped.flatMap(\.entries).count, 2)
+        #expect(m.filteredAndGrouped.flatMap(\.entries).count == 2)
     }
 
-    func testMultiVersionFoldedByDefault() {
+    @Test func testMultiVersionFoldedByDefault() {
         let m = AppModel()
         m.entries = [entry("brain", "5.1.0"), entry("brain", "6.1.0"), entry("brain", "6.0.3")]
         let names = m.filteredAndGrouped.flatMap(\.entries).map(\.name)
-        XCTAssertEqual(names, ["brain"])            // 折叠为一个
-        XCTAssertEqual(m.filteredAndGrouped.flatMap(\.entries).first?.version, "6.1.0")
+        #expect(names == ["brain"])            // 折叠为一个
+        #expect(m.filteredAndGrouped.flatMap(\.entries).first?.version == "6.1.0")
     }
 
-    func testMultiVersionExpanded() {
+    @Test func testMultiVersionExpanded() {
         let m = AppModel()
         m.entries = [entry("brain", "5.1.0"), entry("brain", "6.1.0"), entry("brain", "6.0.3")]
         m.expandedNames.insert("brain")
-        XCTAssertEqual(m.filteredAndGrouped.flatMap(\.entries).count, 3)
+        #expect(m.filteredAndGrouped.flatMap(\.entries).count == 3)
     }
 
-    func testVersionsForName() {
+    @Test func testVersionsForName() {
         let m = AppModel()
         m.entries = [entry("brain", "5.1.0"), entry("brain", "6.1.0")]
-        XCTAssertEqual(m.versions(forName: "brain").count, 2)
-        XCTAssertEqual(m.versions(forName: "brain").first?.version, "6.1.0")
+        #expect(m.versions(forName: "brain").count == 2)
+        #expect(m.versions(forName: "brain").first?.version == "6.1.0")
     }
 }
 ```
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `swift test --filter AppModelTests`
+Run: `./scripts/run-tests.sh --filter AppModelTests`
 Expected: FAIL（`AppModel` 未定义）
 
 - [ ] **Step 3: 写实现 `Sources/SkillHub/ViewModels/AppModel.swift`**
@@ -1313,7 +1310,7 @@ final class AppModel {
 
 - [ ] **Step 4: 运行测试，确认通过**
 
-Run: `swift test --filter AppModelTests`
+Run: `./scripts/run-tests.sh --filter AppModelTests`
 Expected: PASS（6 个测试）
 
 - [ ] **Step 5: Commit**
@@ -1934,7 +1931,7 @@ git commit -m "feat: assemble three-column ContentView and wire app"
 
 - [ ] **Step 1: 跑全量测试**
 
-Run: `swift test`
+Run: `./scripts/run-tests.sh`
 Expected: 全部 PASS（预期 ~20 个测试）。如有失败，修复后重跑。
 
 - [ ] **Step 2: 写 `README.md`**
