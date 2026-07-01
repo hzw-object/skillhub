@@ -20,7 +20,7 @@ struct SkillListView: View {
                             SkillRowView(entry: entry, isSelected: entry.id == model.selectedEntryID)
                                 .tag(entry.id)
                             if !model.expandedNames.contains(entry.name) {
-                                let others = model.versions(forName: entry.name)
+                                let others = model.filteredVersions(forName: entry.name)
                                 if others.count > 1 {
                                     Button("还有 \(others.count - 1) 个版本") {
                                         model.expandedNames.insert(entry.name)
