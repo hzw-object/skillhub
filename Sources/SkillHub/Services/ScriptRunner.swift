@@ -8,10 +8,17 @@ final class ScriptRunner {
         let outPipe = Pipe()
         let errPipe = Pipe()
         if let interp = script.language.interpreter {
-            process.launchPath = "/bin/sh"
-            process.arguments = ["-c", "\(interp) \"\(script.id)\""]
+            // 解释器路径作为可执行文件，脚本路径作为独立参数（不经过 shell，避免注入）。
+            // 对于 "/usr/bin/env <tool>" 形式的解释器，拆出首个 token 作为可执行文件，
+            // 其余作为解释器自身参数，再追加脚本路径。
+            let parts = interp.split(separator: " ").map(String.init)
+            let interpPath = parts.first ?? interp
+            let interpArgs = Array(parts.dropFirst()) + [script.id]
+            process.executableURL = URL(fileURLWithPath: interpPath)
+            process.arguments = interpArgs
         } else {
-            process.launchPath = script.id
+            // 直接执行（脚本自带 +x）
+            process.executableURL = URL(fileURLWithPath: script.id)
             process.arguments = []
         }
         process.standardOutput = outPipe
