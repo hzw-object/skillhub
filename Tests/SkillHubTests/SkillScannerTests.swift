@@ -39,18 +39,21 @@ import Foundation
 
     @Test func testMissingRootProducesScanError() throws {
         // 一个不存在的根目录，scanRoot 应返回空 entries + 一个 ScanError
-        let bogus = SkillRoot(path: "/does/not/exist/\(UUID().uuidString)", source: .superpowers)
+        let bogusPath = "/does/not/exist/\(UUID().uuidString)"
+        let bogus = SkillRoot(path: bogusPath, source: .superpowers)
         let result = SkillScanner.scanRoot(bogus)
         #expect(result.entries.isEmpty)
         #expect(result.errors.count == 1)
         #expect(result.errors.first?.source == .superpowers)
+        #expect(result.errors.first?.path == bogusPath)
         #expect(!(result.errors.first?.message.isEmpty ?? true))
     }
 
     @Test func testScanAggregatesErrorsWithoutInterruptingOtherRoots() async throws {
         // 同时扫描一个不存在的根和一个真实 fixtures 根：
         // 真实根应正常返回条目，不存在的根应产生错误，互不干扰
-        let bogus = SkillRoot(path: "/does/not/exist/\(UUID().uuidString)", source: .superpowers)
+        let bogusPath = "/does/not/exist/\(UUID().uuidString)"
+        let bogus = SkillRoot(path: bogusPath, source: .superpowers)
         let real = SkillRoot(path: fixturesRoot(), source: .personal)
         // 通过 SkillScanner.scan() 间接覆盖，但 PathProvider.rootDirectories() 不一定包含我们的伪根，
         // 这里直接测两个 scanRoot 结果的合并行为即可。
@@ -59,6 +62,7 @@ import Foundation
         #expect(realResult.entries.contains { $0.name == "standard-skill" })
         #expect(bogusResult.errors.count == 1)
         #expect(bogusResult.errors.first?.source == .superpowers)
+        #expect(bogusResult.errors.first?.path == bogusPath)
         #expect(realResult.errors.isEmpty)
     }
 

@@ -55,7 +55,7 @@ final class SkillScanner {
             }
             return (entries, [])
         } catch {
-            return ([], [ScanError(source: root.source, message: error.localizedDescription)])
+            return ([], [ScanError(source: root.source, path: root.path, message: error.localizedDescription)])
         }
     }
 

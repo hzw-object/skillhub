@@ -4,5 +4,6 @@ import Foundation
 /// 用于在侧边栏展示对应来源的红色告警（spec §7.1）。
 struct ScanError: Hashable {
     let source: SkillSource
+    let path: String
     let message: String
 }
