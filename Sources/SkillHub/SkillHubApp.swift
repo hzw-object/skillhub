@@ -8,10 +8,3 @@ struct SkillHubApp: App {
         }
     }
 }
-
-struct ContentView: View {
-    var body: some View {
-        Text("SkillHub skeleton")
-            .padding()
-    }
-}
