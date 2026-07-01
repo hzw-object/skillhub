@@ -19,7 +19,9 @@ struct MetaInfoCard: View {
                 .font(.caption).monospaced()
             HStack {
                 Button("在 Finder 中显示") {
-                    NSWorkspace.shared.openFile(entry.skillDirPath, withApplication: "Finder")
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [URL(fileURLWithPath: entry.skillDirPath)]
+                    )
                 }
                 Button("复制路径") {
                     NSPasteboard.general.clearContents()
