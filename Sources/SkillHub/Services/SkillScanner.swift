@@ -1,48 +1,62 @@
 import Foundation
 
+/// `SkillScanner.scan()` 的返回结果：成功扫描的条目 + 各根目录失败的结构化错误。
+struct ScanResult {
+    let entries: [SkillEntry]
+    let errors: [ScanError]
+}
+
 final class SkillScanner {
-    func scan() async -> [SkillEntry] {
+    func scan() async -> ScanResult {
         let roots = PathProvider.rootDirectories()
-        return await withTaskGroup(of: [SkillEntry].self) { group in
+        return await withTaskGroup(of: (entries: [SkillEntry], errors: [ScanError]).self) { group in
             for root in roots {
                 group.addTask { SkillScanner.scanRoot(root) }
             }
             var all: [SkillEntry] = []
+            var allErrors: [ScanError] = []
             for await batch in group {
-                all.append(contentsOf: batch)
+                all.append(contentsOf: batch.entries)
+                allErrors.append(contentsOf: batch.errors)
             }
-            return all.sorted { lhs, rhs in
+            let sorted = all.sorted { lhs, rhs in
                 if lhs.source.rawValue != rhs.source.rawValue {
                     return lhs.source.rawValue < rhs.source.rawValue
                 }
                 if lhs.name != rhs.name { return lhs.name < rhs.name }
-                return (lhs.version ?? "") > (rhs.version ?? "")
+                return AppModel.compareVersion(lhs.version, rhs.version) == .orderedDescending
             }
+            return ScanResult(entries: sorted, errors: allErrors)
         }
     }
 
-    static func scanRoot(_ root: SkillRoot) -> [SkillEntry] {
+    /// 扫描单个根目录，失败的枚举会作为 `ScanError` 返回，不影响其他根目录。
+    static func scanRoot(_ root: SkillRoot) -> (entries: [SkillEntry], errors: [ScanError]) {
         let fm = FileManager.default
-        guard let subdirs = try? fm.contentsOfDirectory(atPath: root.path) else { return [] }
-        var entries: [SkillEntry] = []
-        var isDir: ObjCBool = false
-        for sub in subdirs {
-            let dir = root.path + "/" + sub
-            guard fm.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { continue }
-            let md = dir + "/SKILL.md"
-            guard fm.fileExists(atPath: md) else { continue }
-            let content = (try? String(contentsOfFile: md, encoding: .utf8)) ?? ""
-            let fm_ = SkillMarkdownParser.parse(content)
-            let name = fm_.name.isEmpty ? sub : fm_.name
-            let (size, count) = directoryStats(at: dir)
-            entries.append(SkillEntry(
-                id: dir, name: name, description: fm_.description,
-                source: root.source, skillDirPath: dir, skillMdPath: md,
-                version: versionFrom(path: root.path),
-                sizeBytes: size, fileCount: count
-            ))
+        do {
+            let subdirs = try fm.contentsOfDirectory(atPath: root.path)
+            var entries: [SkillEntry] = []
+            var isDir: ObjCBool = false
+            for sub in subdirs {
+                let dir = root.path + "/" + sub
+                guard fm.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { continue }
+                let md = dir + "/SKILL.md"
+                guard fm.fileExists(atPath: md) else { continue }
+                let content = (try? String(contentsOfFile: md, encoding: .utf8)) ?? ""
+                let fm_ = SkillMarkdownParser.parse(content)
+                let name = fm_.name.isEmpty ? sub : fm_.name
+                let (size, count) = directoryStats(at: dir)
+                entries.append(SkillEntry(
+                    id: dir, name: name, description: fm_.description,
+                    source: root.source, skillDirPath: dir, skillMdPath: md,
+                    version: versionFrom(path: root.path),
+                    sizeBytes: size, fileCount: count
+                ))
+            }
+            return (entries, [])
+        } catch {
+            return ([], [ScanError(source: root.source, message: error.localizedDescription)])
         }
-        return entries
     }
 
     private static func directoryStats(at path: String) -> (Int, Int) {

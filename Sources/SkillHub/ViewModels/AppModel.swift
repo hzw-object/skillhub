@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 
+@MainActor
 @Observable
 final class AppModel {
     var entries: [SkillEntry] = []
@@ -10,19 +11,23 @@ final class AppModel {
     var loading: Bool = false
     var expandedNames: Set<String> = []
     var lastScanDate: Date?
-    var scanErrors: [String] = []
+    var scanErrors: [ScanError] = []
     private var skillMdCache: [String: String] = [:]
 
-    var filteredAndGrouped: [SkillGroup] {
-        let filtered = entries.filter { e in
+    /// 当前过滤后的（折叠前）条目集合，复用 `filteredAndGrouped` 的过滤逻辑。
+    var filteredEntries: [SkillEntry] {
+        entries.filter { e in
             (selectedSources.isEmpty || selectedSources.contains(e.source))
             && matchesQuery(e)
         }
+    }
+
+    var filteredAndGrouped: [SkillGroup] {
         // 多版本折叠
         var collapsed: [SkillEntry] = []
-        let byName: [String: [SkillEntry]] = Dictionary(grouping: filtered, by: \.name)
+        let byName: [String: [SkillEntry]] = Dictionary(grouping: filteredEntries, by: \.name)
         for name in byName.keys.sorted() {
-            let versions = byName[name]!.sorted { ($0.version ?? "") > ($1.version ?? "") }
+            let versions = byName[name]!.sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
             if expandedNames.contains(name) {
                 collapsed.append(contentsOf: versions)
             } else {
@@ -37,16 +42,26 @@ final class AppModel {
         }
     }
 
+    /// 全量（不受当前过滤影响）的同名条目，按版本降序。
     func versions(forName name: String) -> [SkillEntry] {
         entries.filter { $0.name == name }
-            .sorted { ($0.version ?? "") > ($1.version ?? "") }
+            .sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
+    }
+
+    /// 受当前过滤（source + query）影响的同名条目，按版本降序。
+    /// 用于「还有 N 个版本」按钮的计数与展开决策。
+    func filteredVersions(forName name: String) -> [SkillEntry] {
+        filteredEntries.filter { $0.name == name }
+            .sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
     }
 
     func scan() async {
         loading = true
         defer { loading = false }
         let scanner = SkillScanner()
-        entries = await scanner.scan()
+        let result = await scanner.scan()
+        entries = result.entries
+        scanErrors = result.errors
         lastScanDate = Date()
     }
 
@@ -66,5 +81,26 @@ final class AppModel {
         if e.description.lowercased().contains(q) { return true }
         if e.skillDirPath.lowercased().contains(q) { return true }
         return false
+    }
+
+    /// 语义化版本比较：按 "." 切分，逐段按 Int 比较，缺失段视为 0，
+    /// nil 版本视为最低。返回值同 `ComparisonResult`。
+    nonisolated static func compareVersion(_ a: String?, _ b: String?) -> ComparisonResult {
+        let pa = parseVersion(a)
+        let pb = parseVersion(b)
+        // 对齐到相同长度，缺失补 0
+        let count = max(pa.count, pb.count)
+        for i in 0..<count {
+            let ai = i < pa.count ? pa[i] : 0
+            let bi = i < pb.count ? pb[i] : 0
+            if ai < bi { return .orderedAscending }
+            if ai > bi { return .orderedDescending }
+        }
+        return .orderedSame
+    }
+
+    nonisolated private static func parseVersion(_ v: String?) -> [Int] {
+        guard let v = v else { return [] }
+        return v.split(separator: ".").compactMap { Int($0) }
     }
 }
