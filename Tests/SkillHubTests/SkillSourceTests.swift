@@ -1,27 +1,32 @@
-import XCTest
+import Testing
 @testable import SkillHub
 
-final class SkillSourceTests: XCTestCase {
-    func testAllCasesOrder() {
-        XCTAssertEqual(
-            SkillSource.allCases.map(\.rawValue),
-            ["personal", "superpowers", "frontend_design", "ponytail", "glm_plan_usage", "other"]
+@Suite("SkillSource")
+struct SkillSourceTests {
+    @Test("allCases order is fixed")
+    func allCasesOrder() {
+        #expect(
+            SkillSource.allCases.map(\.rawValue)
+            == ["personal", "superpowers", "frontend_design", "ponytail", "glm_plan_usage", "other"]
         )
     }
 
-    func testIdIsRawValue() {
-        XCTAssertEqual(SkillSource.personal.id, "personal")
+    @Test("id is rawValue")
+    func idIsRawValue() {
+        #expect(SkillSource.personal.id == "personal")
     }
 
-    func testDisplayNameNonEmpty() {
+    @Test("displayName is non-empty for every case")
+    func displayNameNonEmpty() {
         for s in SkillSource.allCases {
-            XCTAssertFalse(s.displayName.isEmpty, "\(s) has empty displayName")
+            #expect(!s.displayName.isEmpty, "\(s) has empty displayName")
         }
     }
 
-    func testIconIsSFSymbolName() {
+    @Test("icon is a non-empty SF Symbol name for every case")
+    func iconIsSFSymbolName() {
         for s in SkillSource.allCases {
-            XCTAssertFalse(s.icon.isEmpty, "\(s) has empty icon")
+            #expect(!s.icon.isEmpty, "\(s) has empty icon")
         }
     }
 }
