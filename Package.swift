@@ -8,6 +8,14 @@ let package = Package(
         .executableTarget(
             name: "SkillHub",
             path: "Sources/SkillHub"
+        ),
+        .testTarget(
+            name: "SkillHubTests",
+            dependencies: ["SkillHub"],
+            path: "Tests/SkillHubTests",
+            resources: [
+                .copy("Fixtures")
+            ]
         )
     ]
 )
