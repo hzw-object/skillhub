@@ -26,5 +26,7 @@ import Foundation
         #expect(f.language == .shell)
         #expect(f.relativePath == "scripts/hello.sh")
         #expect(f.contentPreview.split(separator: "\n").count == 50)
+        #expect(f.content.contains("echo line 59"))
+        #expect(!f.content.isEmpty)
     }
 }

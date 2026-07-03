@@ -42,8 +42,34 @@ import Foundation
     @Test func testMultiVersionExpanded() {
         let m = AppModel()
         m.entries = [entry("brain", "5.1.0"), entry("brain", "6.1.0"), entry("brain", "6.0.3")]
-        m.expandedNames.insert("brain")
+        m.expandedKeys.insert(SkillGroupKey(source: .personal, name: "brain"))
         #expect(m.filteredAndGrouped.flatMap(\.entries).count == 3)
+    }
+
+    @Test func testCrossSourceSameNameNotMerged() {
+        // 同名 skill 来自不同来源：不应被并为一个「多版本」组，
+        // 否则展开后会重复显示跨来源的同版本号。
+        let m = AppModel()
+        m.entries = [
+            entry("brain", "6.1.0", .personal),
+            entry("brain", "6.1.0", .superpowers)
+        ]
+        // 两个来源各自折叠为一个最高版本，共 2 行。
+        #expect(m.filteredAndGrouped.flatMap(\.entries).count == 2)
+        // 个人来源那组的「多版本」计数为 1，不应误判为可展开。
+        let personal = m.filteredVersions(forName: "brain").filter { $0.source == .personal }
+        #expect(personal.count == 1)
+    }
+
+    @Test func testDuplicateVersionDeduped() {
+        // 同来源同名同版本（如 ponytail 同时来自 skills/ 与 .openclaw/skills/）
+        // 应去重为单条，避免「还有 N 个版本」计数虚高。
+        let m = AppModel()
+        m.entries = [
+            entry("ponytail", "4.8.4", .ponytail),
+            entry("ponytail", "4.8.4", .ponytail)
+        ]
+        #expect(m.filteredVersions(forName: "ponytail").count == 1)
     }
 
     @Test func testVersionsForName() {

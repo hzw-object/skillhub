@@ -31,6 +31,22 @@ import Testing
         #expect(fm.description == "第一行\n第二行")
     }
 
+    @Test func testFoldedDescriptionBlock() {
+        // `>` 折叠标量：缩进行用空格连接成一行（对应 ponytail SKILL.md 写法）
+        let md = """
+        ---
+        name: ponytail
+        description: >
+          Forces the laziest solution that actually works.
+          Channels a senior dev who has seen everything.
+        ---
+        # Body
+        """
+        let fm = SkillMarkdownParser.parse(md)
+        #expect(fm.name == "ponytail")
+        #expect(fm.description == "Forces the laziest solution that actually works. Channels a senior dev who has seen everything.")
+    }
+
     @Test func testNoFrontMatter() {
         let md = "# Just a title\nbody"
         let fm = SkillMarkdownParser.parse(md)

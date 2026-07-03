@@ -28,7 +28,25 @@ struct ScriptFile: Identifiable, Hashable {
     let relativePath: String  // 相对 skill 目录
     let sizeBytes: Int
     let language: ScriptLanguage
-    let contentPreview: String  // 前 50 行
+    /// 完整文件内容。用于详情页的目录树预览（替代早期只读前 50 行），
+    /// 也作为脚本预览 sheet 的 fallback。
+    let content: String
+    /// 前 50 行预览，保留给需要截断展示的场景。
+    var contentPreview: String { contentPreviewValue }
+
+    private let contentPreviewValue: String
+
+    /// 测试与构造桩用的便捷初始化器：仅给出运行所需字段，`content` 默认空。
+    init(id: String, name: String, relativePath: String, sizeBytes: Int,
+         language: ScriptLanguage, content: String = "", contentPreview: String? = nil) {
+        self.id = id
+        self.name = name
+        self.relativePath = relativePath
+        self.sizeBytes = sizeBytes
+        self.language = language
+        self.content = content
+        self.contentPreviewValue = contentPreview ?? content
+    }
 
     static func make(at absolutePath: String, skillDirPath: String) throws -> ScriptFile {
         let url = URL(fileURLWithPath: absolutePath)
@@ -40,15 +58,20 @@ struct ScriptFile: Identifiable, Hashable {
             let skillDir = URL(fileURLWithPath: skillDirPath)
             return url.path.replacingOccurrences(of: skillDir.path + "/", with: "")
         }()
-        let contentPreview = ScriptFile.readFirst50Lines(at: absolutePath)
+        let content = ScriptFile.read(at: absolutePath)
+        let preview = ScriptFile.first50Lines(of: content)
         return ScriptFile(id: absolutePath, name: name, relativePath: relativePath,
                           sizeBytes: sizeBytes, language: language,
-                          contentPreview: contentPreview)
+                          content: content, contentPreview: preview)
     }
 
-    private static func readFirst50Lines(at path: String) -> String {
+    private static func read(at path: String) -> String {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let text = String(data: data, encoding: .utf8) else { return "" }
+        return text
+    }
+
+    private static func first50Lines(of text: String) -> String {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         return lines.prefix(50).joined(separator: "\n")
     }

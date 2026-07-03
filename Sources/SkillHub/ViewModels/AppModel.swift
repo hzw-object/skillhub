@@ -10,6 +10,9 @@ final class AppModel {
     var selectedSources: Set<SkillSource> = []
     var loading: Bool = false
     var expandedNames: Set<String> = []
+    /// 按 (source, name) 分组：展开/折叠状态以「来源+名称」为键，
+    /// 这样跨来源的同名 skill 各自独立展开。
+    var expandedKeys: Set<SkillGroupKey> = []
     var lastScanDate: Date?
     var scanErrors: [ScanError] = []
     private var skillMdCache: [String: String] = [:]
@@ -22,19 +25,52 @@ final class AppModel {
         }
     }
 
-    var filteredAndGrouped: [SkillGroup] {
-        // 多版本折叠
-        var collapsed: [SkillEntry] = []
-        let byName: [String: [SkillEntry]] = Dictionary(grouping: filteredEntries, by: \.name)
-        for name in byName.keys.sorted() {
-            let versions = byName[name]!.sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
-            if expandedNames.contains(name) {
-                collapsed.append(contentsOf: versions)
-            } else {
-                collapsed.append(versions.first!)
+    /// 当前过滤后、按 `(source, name)` 分组、同版本去重的条目，
+    /// 供 `filteredVersions(forName:)` 计数与展开决策使用。
+    var dedupedEntries: [SkillEntry] {
+        let byKey: [SkillGroupKey: [SkillEntry]] = Dictionary(
+            grouping: filteredEntries,
+            by: { SkillGroupKey(source: $0.source, name: $0.name) }
+        )
+        var out: [SkillEntry] = []
+        for versions in byKey.values {
+            let sorted = versions.sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
+            // 同一版本号可能出现在多个根目录（ponytail 的 skills/ 与 .openclaw/skills/），
+            // 取最高版本一个、丢弃其余重复版本。
+            var seen = Set<String>()
+            for e in sorted {
+                let key = e.version ?? ""
+                guard !seen.contains(key) else { continue }
+                seen.insert(key)
+                out.append(e)
             }
         }
-        // 按 source 分组
+        return out
+    }
+
+    var filteredAndGrouped: [SkillGroup] {
+        // 先按 (source, name) 分组，再做版本折叠/展开，最后按 source 聚合成 Section。
+        let byKey: [SkillGroupKey: [SkillEntry]] = Dictionary(
+            grouping: filteredEntries,
+            by: { SkillGroupKey(source: $0.source, name: $0.name) }
+        )
+        var collapsed: [SkillEntry] = []
+        for (key, versions) in byKey {
+            let sorted = versions.sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
+            // 同一版本号可能出现在多个根目录（ponytail 的 skills/ 与 .openclaw/skills/），
+            // 取最高版本一个、丢弃其余重复版本。
+            var seen = Set<String>()
+            let deduped = sorted.filter { e in
+                let k = e.version ?? ""
+                guard !seen.contains(k) else { return false }
+                seen.insert(k); return true
+            }
+            if expandedKeys.contains(key) {
+                collapsed.append(contentsOf: deduped)
+            } else {
+                collapsed.append(deduped.first!)
+            }
+        }
         let grouped = Dictionary(grouping: collapsed, by: \.source)
         return SkillSource.allCases.compactMap { src in
             guard let arr = grouped[src], !arr.isEmpty else { return nil }
@@ -42,17 +78,26 @@ final class AppModel {
         }
     }
 
-    /// 全量（不受当前过滤影响）的同名条目，按版本降序。
+    /// 全量（不受当前过滤影响）的同名同来源条目，按版本降序、去重。
     func versions(forName name: String) -> [SkillEntry] {
-        entries.filter { $0.name == name }
-            .sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
+        dedupedVersions(of: entries.filter { $0.name == name })
     }
 
-    /// 受当前过滤（source + query）影响的同名条目，按版本降序。
+    /// 受当前过滤（source + query）影响的同名同来源条目，按版本降序、去重。
     /// 用于「还有 N 个版本」按钮的计数与展开决策。
     func filteredVersions(forName name: String) -> [SkillEntry] {
-        filteredEntries.filter { $0.name == name }
-            .sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
+        dedupedVersions(of: filteredEntries.filter { $0.name == name })
+    }
+
+    private func dedupedVersions(of entries: [SkillEntry]) -> [SkillEntry] {
+        let sorted = entries.sorted { AppModel.compareVersion($0.version, $1.version) == .orderedDescending }
+        var seen = Set<String>()
+        return sorted.filter { e in
+            let key = e.version ?? ""
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
     }
 
     func scan() async {
