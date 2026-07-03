@@ -1,0 +1,88 @@
+name: release
+
+# 推送 v* 形式的 tag 自动触发：构建 .app → 打包 .dmg → 创建 GitHub Release 上传产物。
+# 本地发版流程的 CI 化版本，无需 Apple Developer 证书（ad-hoc 签名）。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # 创建 Release、上传 asset 需要
+
+jobs:
+  release:
+    name: Build & Release .dmg
+    runs-on: macos-14   # Apple Silicon runner，arm64 产物
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 选择 Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: 构建 release 二进制
+        run: swift build -c release
+
+      - name: 打包 .app（ad-hoc 签名）
+        run: ./scripts/build-app.sh
+
+      - name: 打包 .dmg
+        run: ./scripts/build-dmg.sh
+
+      - name: 定位 .dmg 产物
+        id: meta
+        run: |
+          DMG=$(ls dist/SkillHub-*.dmg | head -1)
+          echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
+          echo "Resolved dmg=$DMG"
+
+      - name: 创建 GitHub Release 并上传 .dmg
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SkillHub ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: ${{ steps.meta.outputs.dmg }}
+          body: |
+            首个公开版本。一个原生 SwiftUI macOS 客户端，用于扫描、浏览和运行本机所有 Claude Code skills。
+
+            The first public release. A native SwiftUI macOS client to scan, browse, and run all your local Claude Code skills.
+
+            ## ✨ 功能 / Features
+            - 自动扫描本机所有 skills（个人目录 + 各插件市场），按来源分组 / Auto-scan every local skill (personal dir + plugin marketplaces), grouped by source
+            - 三栏 NavigationSplitView 布局 / Three-pane NavigationSplitView layout
+            - 多版本折叠/展开，按语义化版本（semver）排序 / Multi-version fold/expand, sorted by semver
+            - 跨来源同名 skill 各自独立成组 / Cross-source same-name skills stay independent
+            - SKILL.md 渲染（MarkdownUI + Highlightr 语法高亮）/ SKILL.md rendering (MarkdownUI + Highlightr)
+            - 递归目录树浏览，点击文件查看完整内容 / Recursive directory tree, click any file to read full content
+            - `.sh` / `.py` / `.js` 脚本预览与一键运行（30s 超时）/ Script preview & one-click run (30s timeout)
+            - 来源过滤与搜索 / Source filtering & search
+
+            ## 📦 安装 / Installation
+            1. 下载下方 `.dmg`（Apple Silicon）/ Download the `.dmg` below (Apple Silicon)
+            2. 双击挂载，把 SkillHub.app 拖到 Applications / Mount and drag SkillHub.app to Applications
+            3. 首次运行若被 Gatekeeper 拦截：Finder 右键 SkillHub.app → 打开 → 仍要打开 / On first launch if blocked by Gatekeeper: right-click SkillHub.app → Open → Open anyway
+
+            > ⚠️ ad-hoc 签名（无 Apple Developer 证书），首次运行需手动放行。/ Ad-hoc signed (no Apple Developer cert); allow manually on first launch.
+
+            ## 🖥 环境要求 / Requirements
+            - macOS 14 (Sonoma) 或更高 / or later
+            - Apple Silicon (arm64)
+
+            ## 🔨 从源码构建 / Build from source
+            ```bash
+            git clone https://github.com/${{ github.repository }}.git
+            cd skillhub
+            swift build              # 构建 / build
+            swift run SkillHub       # 运行 / run
+            ./scripts/build-app.sh   # 打包 .app
+            ./scripts/build-dmg.sh   # 打包 .dmg
+            ```
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}
